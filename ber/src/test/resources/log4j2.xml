@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="WARN">
+  <Appenders>
+    <Console name="console" target="SYSTEM_ERR">
+      <PatternLayout pattern="%-5level | %logger | %tid | %msg%n%xThrowable" />
+    </Console>
+  </Appenders>
+  <Loggers>
+    <Logger name="org.apache.xml.security" level="INFO" />
+    <Root level="TRACE">
+      <AppenderRef ref="console" />
+    </Root>
+  </Loggers>
+</Configuration>
