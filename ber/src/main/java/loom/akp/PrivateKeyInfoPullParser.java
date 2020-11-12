@@ -3,10 +3,12 @@ package loom.akp;
 import java.io.InputStream;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
+import java.util.function.Consumer;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import loom.Generator;
 import loom.ber.DerCloseConstructed;
 import loom.ber.DerOpenConstructed;
 import loom.ber.DerPart;
@@ -17,66 +19,62 @@ public final class PrivateKeyInfoPullParser
 {
 	private static final Logger logger = LogManager.getLogger();
 	
-	private final Continuation continuation;
+	private final Generator<PrivateKeyInfoPart> generator;
 	
 	private final DerPullParser parser;
-
-	private final ContinuationScope scope = new ContinuationScope("PrivateKeyInfoPullParser");
-	
-	private PrivateKeyInfoPart next;
 	
 	private InputStream source;
 
 	public PrivateKeyInfoPullParser ()
 	{
-		this.continuation = new Continuation(scope, this::run);
+		this.generator = new Generator<>(this::run);
 		this.parser = new DerPullParser();
 	}
 	
 	public PrivateKeyInfoPart pull (InputStream source)
 	{
-		this.next = null;
 		this.source = source;
-		continuation.run();
+		final var next = generator.get();
+		this.source = null;
 		return next;
 	}
 	
-	private void run ()
+	private void run (Consumer<PrivateKeyInfoPart> yield)
 	{
 		while (true)
 		{
 			// open privateKeyInfo
-			pullOpen(16);
+			pullOpen(16, yield);
 
 			// privateKeyInfo.version
-			final var version = pullPrimitive(2);
-			this.yield(new PrivateKeyInfoVersion(bigInteger(version.content())));
+			final var version = pullPrimitive(2, yield);
+			yield.accept(new PrivateKeyInfoVersion(bigInteger(version.content())));
 			
 			// open privateKeyInfo.privateKeyAlgorithm
-			pullOpen(16);
+			pullOpen(16, yield);
 
 			// privateKeyInfo.privateKeyAlgorithm.algorithm
-			final var algorithm = pullPrimitive(6);
-			this.yield(new PrivateKeyInfoAlgorithm(algorithm.content()));
+			final var algorithm = pullPrimitive(6, yield);
+			yield.accept(new PrivateKeyInfoAlgorithm(algorithm.content()));
 			
 			// privateKeyInfo.privateKeyAlgorithm.parameters
-			pull();
+			pull(yield);
 			
-			pullClose(16);
+			pullClose(16, yield);
 			// close privateKeyInfo.privateKeyAlgorithm
 
-			final var privateKey = pullPrimitive(4);
-			this.yield(new PrivateKeyInfoPrivateKey(privateKey.content()));
+			final var privateKey = pullPrimitive(4, yield);
+			yield.accept(new PrivateKeyInfoPrivateKey(privateKey.content()));
 
-			pullClose(16);
+			pullClose(16, yield);
 			// close privateKeyInfo
 		}
 	}
 	
 	@SuppressWarnings("preview")
-	private DerCloseConstructed pullClose (int tag)
+	private DerCloseConstructed pullClose (int tag, Consumer<?> yield)
 	{
-		final var part = pull();
+		final var part = pull(yield);
 		if (! (part instanceof DerCloseConstructed close))
 			throw new RuntimeException("unexpected close: " + part);
 		if (close.tag() != tag)
@@ -85,9 +83,9 @@ public final class PrivateKeyInfoPullParser
 	}
 	
 	@SuppressWarnings("preview")
-	private DerOpenConstructed pullOpen (int tag)
+	private DerOpenConstructed pullOpen (int tag, Consumer<?> yield)
 	{
-		final var part = pull();
+		final var part = pull(yield);
 		if (! (part instanceof DerOpenConstructed open))
 			throw new RuntimeException("expected open: " + part);
 		if (open.tag() != tag)
@@ -96,9 +94,9 @@ public final class PrivateKeyInfoPullParser
 	}
 	
 	@SuppressWarnings("preview")
-	private DerPrimitive pullPrimitive (int tag)
+	private DerPrimitive pullPrimitive (int tag, Consumer<?> yield)
 	{
-		final var part = pull();
+		final var part = pull(yield);
 		if (! (part instanceof DerPrimitive primitive))
 			throw new RuntimeException("unexpected primitive: " + part);
 		if (primitive.tag() != tag)
@@ -106,26 +104,19 @@ public final class PrivateKeyInfoPullParser
 		return primitive;
 	}
 	
-	private DerPart pull ()
+	private DerPart pull (Consumer<?> yield)
 	{
 		DerPart part = null;
 		do {
 			part = parser.pull(source);
 			if (part == null) {
 				logger.atTrace().log("pull [{}]: got null, yielding", hashCode());
-				Continuation.yield(scope);
+				yield.accept(null);
 			}
 		}
 		while (part == null);
 		logger.atTrace().log("pull [{}]: got {}", hashCode(), part);
 		return part;
-	}
-	
-	private void yield (PrivateKeyInfoPart next)
-	{
-		this.next = next;
-		logger.atDebug().log("run [{}]: next {}", hashCode(), next);
-		Continuation.yield(scope);
 	}
 	
 	private static BigInteger bigInteger (ByteBuffer buffer)

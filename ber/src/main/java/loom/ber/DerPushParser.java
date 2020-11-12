@@ -1,29 +1,27 @@
 package loom.ber;
 
 import java.nio.ByteBuffer;
+import java.util.function.Consumer;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+
+import loom.Generator;
 
 public final class DerPushParser
 {
 	private static final Logger logger = LogManager.getLogger();
 	
-	private final ContinuationScope scope;
-	
-	private final Continuation continuation;
+	private final Generator<DerPart> generator;
 	
 	private int consumed = 0;
-	
-	private DerPart next;
 	
 	private ByteBuffer source;
 	
 	public DerPushParser ()
 	{
-		this.scope = new ContinuationScope("DerPushParser");
-		this.continuation = new Continuation(scope, this::run);
-	}
+		this.generator = new Generator<DerPart>(this::run);
+	};
 	
 	public int consumed ()
 	{
@@ -31,15 +29,14 @@ public final class DerPushParser
 	}
 	
 	public DerPart push (ByteBuffer in)
-	{		
-		next = null;
+	{
 		source = in;		
-		continuation.run();		
+		final var next = generator.get();	
 		source = null;		
 		return next;
 	}
 	
-	public void run ()
+	public void run (Consumer<DerPart> yield)
 	{
 		byte byte_ = 0;
 		
@@ -47,7 +44,7 @@ public final class DerPushParser
 		{
 			// tag
 			
-			final byte type = pull();
+			final byte type = pull(yield);
 			
 			logger.atDebug().log("parser [{}]: type = {}", hashCode(), type);
 			
@@ -68,7 +65,7 @@ public final class DerPushParser
 			
 			final int length;
 			
-			byte_ = pull();
+			byte_ = pull(yield);
 			
 			if ((byte_ & 0x80) == 0) {
 				// definite short length
@@ -79,7 +76,7 @@ public final class DerPushParser
 					int tmp = 0;
 					for (int i = 0, j = (byte_ & 0x7F); i != j; ++i) {
 						tmp <<= 8;
-						tmp |= (pull() & 0xFF);
+						tmp |= (pull(yield) & 0xFF);
 					}
 					length = tmp;
 				}
@@ -98,39 +95,39 @@ public final class DerPushParser
 				// primitive
 				
 				final var content = ByteBuffer.allocate(length);
-				pull(content); // #TODO: do not copy! reuse!
+				pull(content, yield); // #TODO: do not copy! reuse!
 				content.flip();
 				
 				logger.atDebug().log("parser [{}]: consumed = {}", hashCode(), consumed);
 				
-				yield_(new DerPrimitive(type, tag, content));
+				yield.accept(new DerPrimitive(type, tag, content));
 			}
 			else
 			{
 				// constructed
 				
-				yield_(new DerOpenConstructed(type, tag, length));
+				yield.accept(new DerOpenConstructed(type, tag, length));
 				
 				final var parser = new DerPushParser();
 				
 				while (parser.consumed < length)
 				{
 					final var part = parser.push(source);
-					yield_(part);
+					yield.accept(part);
 				}
 				
 				consumed += parser.consumed;
 				
-				yield_(new DerCloseConstructed(type, tag, length));
+				yield.accept(new DerCloseConstructed(type, tag, length));
 			}
 		}
 	}
 	
-	public byte pull ()
+	public byte pull (Consumer<?> yield)
 	{
 		if (! source.hasRemaining()) {
 			logger.atTrace().log("parser [{}]: pull from {}, empty", hashCode(), source.hashCode());
-			Continuation.yield(scope);
+			yield.accept(null);
 		}
 		
 		final byte byte_ = source.get();
@@ -139,13 +136,13 @@ public final class DerPushParser
 		return byte_;
 	}
 	
-	public void pull (ByteBuffer sink)
+	public void pull (ByteBuffer sink, Consumer<?> yield)
 	{
 		while (sink.hasRemaining()) 
 		{
 			if (! source.hasRemaining()) {
 				logger.atTrace().log("parser [{}]: pull from {}, empty", hashCode(), source.hashCode());
-				Continuation.yield(scope);
+				yield.accept(null);
 			}
 
 			++consumed;
@@ -153,11 +150,5 @@ public final class DerPushParser
 			logger.atTrace().log("parser [{}]: pull from {} position {} value {}", hashCode(), source.hashCode(), (source.position() - 1), byte_);
 			sink.put(byte_);
 		}
-	}
-	
-	public void yield_ (DerPart thing)
-	{
-		next = thing;
-		Continuation.yield(scope);
 	}
 }

@@ -3,10 +3,12 @@ package loom.rsa;
 import java.io.InputStream;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
+import java.util.function.Consumer;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import loom.Generator;
 import loom.ber.DerPart;
 import loom.ber.DerPrimitive;
 import loom.ber.DerPullParser;
@@ -15,82 +17,70 @@ public final class RsaPublicPullParser
 {
 	private static final Logger logger = LogManager.getLogger();
 	
-	private final ContinuationScope continuationScope;
-	
-	private final Continuation continuation;
+	private final Generator<RsaPart> generator;
 
 	private final DerPullParser parser;
-	
-	private RsaPart next;
 	
 	private InputStream source;
 	
 	public RsaPublicPullParser ()
 	{
-		this.continuationScope = new ContinuationScope("RsaPublicPullParser");
-		this.continuation = new Continuation(continuationScope, this::run);
+		this.generator = new Generator<>(this::run);
 		this.parser = new DerPullParser();
 	}
 	
 	public RsaPart pull (InputStream source)
 	{
-		this.next = null;
 		this.source = source;
-		continuation.run();
+		final var next = generator.get();
 		this.source = null;
-		return this.next;
+		return next;
 	}
 	
 	@SuppressWarnings("preview")
-	private void run ()
+	private void run (Consumer<RsaPart> yield)
 	{
 		while (true)
 		{
-			var part = pull();
+			var part = pull(yield);
 			if (part.tag() != 16)
 				throw new RuntimeException("expected open SEQUENCE");
 			
-			part = pull();
+			part = pull(yield);
 			if (part.tag() != 2)
 				throw new RuntimeException("expected INTEGER");
 			if (! (part instanceof DerPrimitive modulus))
 				throw new RuntimeException("expected primitive");
 			else
-				yield_(new RsaPart(RsaPartType.MODULUS, bigInteger(modulus.content())));
+				yield.accept(new RsaPart(RsaPartType.MODULUS, bigInteger(modulus.content())));
 			
-			part = pull();
+			part = pull(yield);
 			if (part.tag() != 2)
 				throw new RuntimeException("expected INTEGER");
 			if (! (part instanceof DerPrimitive exponent))
 				throw new RuntimeException("expected primitive");
 			else
-				yield_(new RsaPart(RsaPartType.PUBLIC_EXPONENT, bigInteger(exponent.content())));
+				yield.accept(new RsaPart(RsaPartType.PUBLIC_EXPONENT, bigInteger(exponent.content())));
 
-			final var closeSequence = pull();
+			final var closeSequence = pull(yield);
 			if (closeSequence.tag() != 16)
 				throw new RuntimeException("expected close SEQUENCE");
 		}
 	}
 	
-	private DerPart pull ()
+	private DerPart pull (Consumer<RsaPart> yield)
 	{
 		DerPart part = null;
 		do {
 			part = parser.pull(source);
 			if (part == null) {
 				logger.atTrace().log("pull [{}]: got null, yielding", hashCode());
-				Continuation.yield(continuationScope);
+				yield.accept(null);
 			}
 		}
 		while (part == null);
 		logger.atTrace().log("pull [{}]: got {}", hashCode(), part);
 		return part;
-	}
-	
-	public void yield_ (RsaPart part)
-	{
-		next = part;
-		Continuation.yield(continuationScope);
 	}
 	
 	private static BigInteger bigInteger (ByteBuffer buffer)
