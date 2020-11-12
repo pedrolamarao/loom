@@ -1,35 +1,31 @@
 package loom.rsa;
 
-import java.io.InputStream;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import loom.Generator;
-import loom.ber.DerParser;
 import loom.ber.DerPart;
 import loom.ber.DerPrimitive;
 
-public final class RsaPublicPullParser
+public final class RsaPublicParser
 {
 	private static final Logger logger = LogManager.getLogger();
 	
 	private final Generator<RsaPart> generator;
-
-	private final DerParser parser;
 	
-	private InputStream source;
+	private Supplier<DerPart> source;
 	
-	public RsaPublicPullParser ()
+	public RsaPublicParser ()
 	{
 		this.generator = new Generator<>(this::run);
-		this.parser = new DerParser();
 	}
 	
-	public RsaPart pull (InputStream source)
+	public RsaPart pull (Supplier<DerPart> source)
 	{
 		this.source = source;
 		final var next = generator.get();
@@ -51,16 +47,14 @@ public final class RsaPublicPullParser
 				throw new RuntimeException("expected INTEGER");
 			if (! (part instanceof DerPrimitive modulus))
 				throw new RuntimeException("expected primitive");
-			else
-				yield.accept(new RsaPart(RsaPartType.MODULUS, bigInteger(modulus.content())));
+			yield.accept(new RsaPart(RsaPartType.MODULUS, bigInteger(modulus.content())));
 			
 			part = pull(yield);
 			if (part.tag() != 2)
 				throw new RuntimeException("expected INTEGER");
 			if (! (part instanceof DerPrimitive exponent))
 				throw new RuntimeException("expected primitive");
-			else
-				yield.accept(new RsaPart(RsaPartType.PUBLIC_EXPONENT, bigInteger(exponent.content())));
+			yield.accept(new RsaPart(RsaPartType.PUBLIC_EXPONENT, bigInteger(exponent.content())));
 
 			final var closeSequence = pull(yield);
 			if (closeSequence.tag() != 16)
@@ -72,7 +66,7 @@ public final class RsaPublicPullParser
 	{
 		DerPart part = null;
 		do {
-			part = parser.parse(source);
+			part = source.get();
 			if (part == null) {
 				logger.atTrace().log("pull [{}]: got null, yielding", hashCode());
 				yield.accept(null);

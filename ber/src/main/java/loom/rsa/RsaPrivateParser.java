@@ -1,35 +1,31 @@
 package loom.rsa;
 
-import java.io.InputStream;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import loom.Generator;
-import loom.ber.DerParser;
 import loom.ber.DerPart;
 import loom.ber.DerPrimitive;
 
-public final class RsaPrivatePullParser
+public final class RsaPrivateParser
 {
 	private static final Logger logger = LogManager.getLogger();
 	
 	private final Generator<RsaPart> generator;
-
-	private final DerParser parser;
 	
-	private InputStream source;
+	private Supplier<DerPart> source;
 	
-	public RsaPrivatePullParser ()
+	public RsaPrivateParser ()
 	{
 		this.generator = new Generator<>(this::run);
-		this.parser = new DerParser();;
 	}
 	
-	public RsaPart pull (InputStream source)
+	public RsaPart parse (Supplier<DerPart> source)
 	{
 		this.source = source;
 		final var next = generator.get();
@@ -51,60 +47,69 @@ public final class RsaPrivatePullParser
 				throw new RuntimeException("expected INTEGER");
 			if (! (part instanceof DerPrimitive version))
 				throw new RuntimeException("expected primitive INTEGER");
-			else
-				yield.accept(new RsaPart(RsaPartType.VERSION, bigInteger(version.content())));
+			final var versionNumber = bigInteger(version.content());
+			yield.accept(new RsaPart(RsaPartType.VERSION, versionNumber));
 			
 			part = pull(yield);
 			if (part.tag() != 2)
 				throw new RuntimeException("expected INTEGER");
 			if (! (part instanceof DerPrimitive modulus))
 				throw new RuntimeException("expected primitive INTEGER");
-			else
-				yield.accept(new RsaPart(RsaPartType.MODULUS, bigInteger(modulus.content())));
+			yield.accept(new RsaPart(RsaPartType.MODULUS, bigInteger(modulus.content())));
 			
 			part = pull(yield);
 			if (part.tag() != 2)
 				throw new RuntimeException("expected INTEGER");
 			if (! (part instanceof DerPrimitive publicExponent))
 				throw new RuntimeException("expected primitive INTEGER");
-			else
-				yield.accept(new RsaPart(RsaPartType.PUBLIC_EXPONENT, bigInteger(publicExponent.content())));
+			yield.accept(new RsaPart(RsaPartType.PUBLIC_EXPONENT, bigInteger(publicExponent.content())));
 			
 			part = pull(yield);
 			if (part.tag() != 2)
 				throw new RuntimeException("expected INTEGER");
 			if (! (part instanceof DerPrimitive privateExponent))
 				throw new RuntimeException("expected primitive INTEGER");
-			else
-				yield.accept(new RsaPart(RsaPartType.PUBLIC_EXPONENT, bigInteger(privateExponent.content())));
+			yield.accept(new RsaPart(RsaPartType.PRIVATE_EXPONENT, bigInteger(privateExponent.content())));
 			
 			part = pull(yield);
 			if (part.tag() != 2)
 				throw new RuntimeException("expected INTEGER");
-			// prime1
+			if (! (part instanceof DerPrimitive prime_1))
+				throw new RuntimeException("expected primitive INTEGER");
+			yield.accept(new RsaPart(RsaPartType.PRIME_1, bigInteger(prime_1.content())));
 			
 			part = pull(yield);
 			if (part.tag() != 2)
 				throw new RuntimeException("expected INTEGER");
-			// prime2
+			if (! (part instanceof DerPrimitive prime_2))
+				throw new RuntimeException("expected primitive INTEGER");
+			yield.accept(new RsaPart(RsaPartType.PRIME_2, bigInteger(prime_2.content())));
 			
 			part = pull(yield);
 			if (part.tag() != 2)
 				throw new RuntimeException("expected INTEGER");
-			// exponent1
+			if (! (part instanceof DerPrimitive exponent_1))
+				throw new RuntimeException("expected primitive INTEGER");
+			yield.accept(new RsaPart(RsaPartType.EXPONENT_1, bigInteger(exponent_1.content())));
 			
 			part = pull(yield);
 			if (part.tag() != 2)
 				throw new RuntimeException("expected INTEGER");
-			// exponent2
+			if (! (part instanceof DerPrimitive exponent_2))
+				throw new RuntimeException("expected primitive INTEGER");
+			yield.accept(new RsaPart(RsaPartType.EXPONENT_2, bigInteger(exponent_2.content())));
 			
 			part = pull(yield);
 			if (part.tag() != 2)
 				throw new RuntimeException("expected INTEGER");
-			// coefficient
-			
-			// #TODO: other prime infos
+			if (! (part instanceof DerPrimitive coefficient))
+				throw new RuntimeException("expected primitive INTEGER");
+			yield.accept(new RsaPart(RsaPartType.COEFFICIENT, bigInteger(coefficient.content())));
 
+			if (! versionNumber.equals(BigInteger.ZERO)) {
+				throw new RuntimeException("run: version not supported: " + versionNumber);
+			}
+			
 			final var closeSequence = pull(yield);
 			if (closeSequence.tag() != 16)
 				throw new RuntimeException("expected close SEQUENCE");
@@ -115,7 +120,7 @@ public final class RsaPrivatePullParser
 	{
 		DerPart part = null;
 		do {
-			part = parser.parse(source);
+			part = source.get();
 			if (part == null) {
 				logger.atTrace().log("pull [{}]: got null, yielding", hashCode());
 				yield.accept(null);

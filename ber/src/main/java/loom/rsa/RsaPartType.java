@@ -2,7 +2,12 @@ package loom.rsa;
 
 public enum RsaPartType
 {
+	COEFFICIENT,
+	EXPONENT_1,
+	EXPONENT_2,
 	MODULUS,
+	PRIME_1,
+	PRIME_2,
 	PRIVATE_EXPONENT,
 	PUBLIC_EXPONENT,
 	VERSION;
