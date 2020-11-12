@@ -11,9 +11,9 @@ import org.apache.logging.log4j.Logger;
 import loom.Generator;
 import loom.ber.DerCloseConstructed;
 import loom.ber.DerOpenConstructed;
+import loom.ber.DerParser;
 import loom.ber.DerPart;
 import loom.ber.DerPrimitive;
-import loom.ber.DerPullParser;
 
 public final class PrivateKeyInfoPullParser
 {
@@ -21,14 +21,14 @@ public final class PrivateKeyInfoPullParser
 	
 	private final Generator<PrivateKeyInfoPart> generator;
 	
-	private final DerPullParser parser;
+	private final DerParser parser;
 	
 	private InputStream source;
 
 	public PrivateKeyInfoPullParser ()
 	{
 		this.generator = new Generator<>(this::run);
-		this.parser = new DerPullParser();
+		this.parser = new DerParser();
 	}
 	
 	public PrivateKeyInfoPart pull (InputStream source)
@@ -108,7 +108,7 @@ public final class PrivateKeyInfoPullParser
 	{
 		DerPart part = null;
 		do {
-			part = parser.pull(source);
+			part = parser.parse(source);
 			if (part == null) {
 				logger.atTrace().log("pull [{}]: got null, yielding", hashCode());
 				yield.accept(null);

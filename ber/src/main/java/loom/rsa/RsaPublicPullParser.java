@@ -9,9 +9,9 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import loom.Generator;
+import loom.ber.DerParser;
 import loom.ber.DerPart;
 import loom.ber.DerPrimitive;
-import loom.ber.DerPullParser;
 
 public final class RsaPublicPullParser
 {
@@ -19,14 +19,14 @@ public final class RsaPublicPullParser
 	
 	private final Generator<RsaPart> generator;
 
-	private final DerPullParser parser;
+	private final DerParser parser;
 	
 	private InputStream source;
 	
 	public RsaPublicPullParser ()
 	{
 		this.generator = new Generator<>(this::run);
-		this.parser = new DerPullParser();
+		this.parser = new DerParser();
 	}
 	
 	public RsaPart pull (InputStream source)
@@ -72,7 +72,7 @@ public final class RsaPublicPullParser
 	{
 		DerPart part = null;
 		do {
-			part = parser.pull(source);
+			part = parser.parse(source);
 			if (part == null) {
 				logger.atTrace().log("pull [{}]: got null, yielding", hashCode());
 				yield.accept(null);
